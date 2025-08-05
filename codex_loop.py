@@ -3,7 +3,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import List, Optional
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError
 
 from openai_utils import openai_configure_api, openai_generate_response
 
@@ -65,16 +65,30 @@ def generate_next_step(goal: str, history: List[HistoryEntry]) -> Optional[str]:
     return content.strip() if content else None
 
 
-async def ask_codex(question: str) -> str:
+async def ask_codex(question: str, gui: bool = False) -> str:
     """Send a question to the Codex site and return the last response text."""
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=not gui)
         page = await browser.new_page()
         await page.goto(CODEx_URL)
 
         # Wait for the text area to be available and submit the question
         textarea_selector = "textarea"
-        await page.wait_for_selector(textarea_selector)
+        try:
+            await page.wait_for_selector(textarea_selector, timeout=30000)
+        except TimeoutError:
+            if gui:
+                print(
+                    "Text area not found; a challenge page may be present."
+                    "\nResolve it in the browser window, then press Enter here to continue."
+                )
+                await asyncio.get_running_loop().run_in_executor(
+                    None, input, "Press Enter to resume..."
+                )
+                await page.wait_for_selector(textarea_selector, timeout=30000)
+            else:
+                await browser.close()
+                raise
         await page.fill(textarea_selector, question)
         await page.keyboard.press("Enter")
 
@@ -87,7 +101,7 @@ async def ask_codex(question: str) -> str:
         return content
 
 
-async def run(goal: str, cycles: int) -> None:
+async def run(goal: str, cycles: int, gui: bool = False) -> None:
     """Run the orchestrator/agent loop for a given number of cycles."""
 
     history: List[HistoryEntry] = []
@@ -97,7 +111,7 @@ async def run(goal: str, cycles: int) -> None:
         if query is None:
             print("No further steps generated.")
             break
-        response = await ask_codex(query)
+        response = await ask_codex(query, gui=gui)
         summary = summarize_response(query, response)
         history.append(HistoryEntry(query, response, summary))
         print(
@@ -110,9 +124,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Codex headless loop prototype")
     parser.add_argument("goal", help="Initial user goal or question")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
+    parser.add_argument(
+        "--gui", action="store_true", help="Open a visible browser and pause for manual steps"
+    )
     args = parser.parse_args()
     openai_configure_api()
-    asyncio.run(run(args.goal, args.cycles))
+    asyncio.run(run(args.goal, args.cycles, gui=args.gui))
 
 
 if __name__ == "__main__":
