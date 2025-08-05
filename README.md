@@ -15,6 +15,18 @@ playwright install
 python codex_loop.py "What is the capital of France?" --cycles 1
 ```
 
+To interact with the browser during intermediate steps (e.g. solving a
+challenge page), run the scripts with the `--gui` flag. This opens a visible
+browser window and pauses execution so you can complete any required steps
+before the automation resumes.
+
+Example:
+
+```bash
+python codex_login.py --gui
+python codex_loop.py "What is the capital of France?" --cycles 1 --gui
+```
+
 The script performs the following cycle:
 
 1. The LLM planner generates the next request for Codex using the user goal and interaction history.
