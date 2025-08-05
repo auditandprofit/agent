@@ -1,21 +1,28 @@
 import argparse
 import asyncio
+import json
 from typing import Optional
 
 from playwright.async_api import async_playwright
+
+from openai_utils import (
+    openai_configure_api,
+    openai_generate_response,
+    openai_parse_function_call,
+)
 
 
 CODEx_URL = "https://chatgpt.com/codex"
 
 
 def orchestrator_llm(prompt: str) -> str:
-    """Placeholder for an orchestrator LLM.
-
-    In a full implementation this function would call an LLM to determine the
-    next action based on the provided prompt. For now it simply echoes the
-    prompt to demonstrate the flow.
-    """
-    return f"Echo: {prompt}"
+    """Call an LLM to determine the next action based on the prompt."""
+    messages = [{"role": "user", "content": prompt}]
+    response = openai_generate_response(messages)
+    name, parsed = openai_parse_function_call(response)
+    if name:
+        return json.dumps(parsed)
+    return response.choices[0].message.content or ""
 
 
 async def ask_codex(question: str) -> str:
@@ -56,6 +63,7 @@ def main() -> None:
     parser.add_argument("goal", help="Initial user goal or question")
     parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
     args = parser.parse_args()
+    openai_configure_api()
     asyncio.run(run(args.goal, args.cycles))
 
 
