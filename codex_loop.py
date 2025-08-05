@@ -1,28 +1,68 @@
 import argparse
 import asyncio
-import json
-from typing import Optional
+from dataclasses import dataclass
+from typing import List, Optional
 
 from playwright.async_api import async_playwright
 
-from openai_utils import (
-    openai_configure_api,
-    openai_generate_response,
-    openai_parse_function_call,
-)
+from openai_utils import openai_configure_api, openai_generate_response
 
 
 CODEx_URL = "https://chatgpt.com/codex"
 
 
-def orchestrator_llm(prompt: str) -> str:
-    """Call an LLM to determine the next action based on the prompt."""
-    messages = [{"role": "user", "content": prompt}]
-    response = openai_generate_response(messages)
-    name, parsed = openai_parse_function_call(response)
-    if name:
-        return json.dumps(parsed)
-    return response.choices[0].message.content or ""
+@dataclass
+class HistoryEntry:
+    """Container for a single Codex interaction."""
+
+    request: str
+    response: str
+    summary: str
+
+
+def summarize_response(request: str, response: str) -> str:
+    """Summarize Codex's response for compact history."""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You condense Codex responses into brief summaries.",
+        },
+        {
+            "role": "user",
+            "content": f"Request:\n{request}\n\nResponse:\n{response}\n\nSummary:",
+        },
+    ]
+    resp = openai_generate_response(messages, functions=[])
+    return resp.choices[0].message.content or ""
+
+
+def generate_next_step(goal: str, history: List[HistoryEntry]) -> Optional[str]:
+    """Ask the LLM for the next Codex request based on accumulated history."""
+
+    history_lines = [f"Initial goal: {goal}"]
+    for entry in history:
+        history_lines.append(
+            f"Request: {entry.request}\nResponse: {entry.response}\nSummary: {entry.summary}"
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You plan the next step for Codex."
+                " Given the user's goal and history, respond with the next request."
+                " Reply with DONE if no further steps are required."
+            ),
+        },
+        {"role": "user", "content": "\n\n".join(history_lines)},
+    ]
+
+    resp = openai_generate_response(messages, functions=[])
+    content = resp.choices[0].message.content
+    if content and content.strip().upper().startswith("DONE"):
+        return None
+    return content.strip() if content else None
 
 
 async def ask_codex(question: str) -> str:
@@ -49,13 +89,21 @@ async def ask_codex(question: str) -> str:
 
 async def run(goal: str, cycles: int) -> None:
     """Run the orchestrator/agent loop for a given number of cycles."""
-    query: Optional[str] = goal
+
+    history: List[HistoryEntry] = []
+    query = generate_next_step(goal, history)
+
     for idx in range(1, cycles + 1):
         if query is None:
+            print("No further steps generated.")
             break
-        result = await ask_codex(query)
-        print(f"Cycle {idx} result:\n{result}\n")
-        query = orchestrator_llm(result)
+        response = await ask_codex(query)
+        summary = summarize_response(query, response)
+        history.append(HistoryEntry(query, response, summary))
+        print(
+            f"Cycle {idx}\nRequest: {query}\nResponse: {response}\nSummary: {summary}\n"
+        )
+        query = generate_next_step(goal, history)
 
 
 def main() -> None:
