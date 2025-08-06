@@ -35,3 +35,15 @@ The script performs the following cycle:
 4. The updated history is provided to the planner to determine the next step.
 
 The number of cycles can be configured via the `--cycles` flag.
+
+## Phase mode
+
+Some environments expect an entry point named `phase_mode`. The project
+provides a thin wrapper so these tools can launch the agent directly:
+
+```bash
+python phase_mode.py "What is the capital of France?" --cycles 1
+```
+
+This entry point forwards to the regular `codex_loop` script but offers a
+stable module name for orchestration systems.
