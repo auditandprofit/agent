@@ -47,3 +47,11 @@ python phase_mode.py "What is the capital of France?" --cycles 1
 
 This entry point forwards to the regular `codex_loop` script but offers a
 stable module name for orchestration systems.
+
+Similarly, the project exposes a `phase_login` module that wraps the
+`codex_login` script so the login workflow can be launched via a predictable
+entry point:
+
+```bash
+python phase_login.py --gui
+```
